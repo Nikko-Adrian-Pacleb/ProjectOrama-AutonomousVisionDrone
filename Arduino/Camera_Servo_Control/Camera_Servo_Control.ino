@@ -104,16 +104,16 @@ void setup() {
     angleBuffer[i] = 0;
   }
   
-  Serial.print("\r\n********************** Single Axis Gimbal Controller **********************\r\n");
-  Serial.println("Gimbal Commands:");
-  Serial.println("  P<value> - Set Kp (e.g., P2.5)");
-  Serial.println("  I<value> - Set Ki (e.g., I0.1)");
-  Serial.println("  D<value> - Set Kd (e.g., D0.05)");
-  Serial.println("  AUTO - Start auto-tuning");
-  Serial.println("  STATUS - Show current PID values");
-  Serial.println("  RESET - Reset PID controller");
-  Serial.println("IMU Commands:");
-  ShowHelp();
+  // Serial.print("\r\n********************** Single Axis Gimbal Controller **********************\r\n");
+  // Serial.println("Gimbal Commands:");
+  // Serial.println("  P<value> - Set Kp (e.g., P2.5)");
+  // Serial.println("  I<value> - Set Ki (e.g., I0.1)");
+  // Serial.println("  D<value> - Set Kd (e.g., D0.05)");
+  // Serial.println("  AUTO - Start auto-tuning");
+  // Serial.println("  STATUS - Show current PID values");
+  // Serial.println("  RESET - Reset PID controller");
+  // Serial.println("IMU Commands:");
+  // ShowHelp();
   
   // Try to find sensor if not responding
   delay(1000);
@@ -139,7 +139,7 @@ void loop() {
   CmdProcess();
   
   // Process gimbal commands
-  handleGimbalCommands();
+  // handleGimbalCommands();
   
   // Update gimbal based on IMU data
   if(s_cDataUpdate) {
@@ -175,7 +175,7 @@ void setupServo() {
   gimbalServo.attach(12, 500, 2400);
   gimbalServo.write(90);
   delay(1000);
-  Serial.println("Servo initialized at level position (90°)");
+  //Serial.println("Servo initialized at level position (90°)");
 }
 
 float applyMovingAverage(float newAngle) {
@@ -253,72 +253,72 @@ void updateGimbal(float tiltAngle) {
   gimbalServo.write(finalAngle);
   
   // Debug output
-  Serial.print("Tilt: ");
-  Serial.print(smoothedTilt, 2);
-  Serial.print("° | Error: ");
-  Serial.print(error, 2);
-  Serial.print("° | Servo: ");
-  Serial.print(finalAngle);
-  Serial.print("° | PID: P=");
-  Serial.print(kp, 2);
-  Serial.print(" I=");
-  Serial.print(ki, 3);
-  Serial.print(" D=");
-  Serial.println(kd, 3);
+  // Serial.print("Tilt: ");
+  // Serial.print(smoothedTilt, 2);
+  // Serial.print("° | Error: ");
+  // Serial.print(error, 2);
+  // Serial.print("° | Servo: ");
+  // Serial.print(finalAngle);
+  // Serial.print("° | PID: P=");
+  // Serial.print(kp, 2);
+  // Serial.print(" I=");
+  // Serial.print(ki, 3);
+  // Serial.print(" D=");
+  // Serial.println(kd, 3);
 }
 
-void handleGimbalCommands() {
-  static String inputBuffer = "";
+// void handleGimbalCommands() {
+//   static String inputBuffer = "";
   
-  if (Serial.available()) {
-    char c = Serial.read();
-    if (c == '\n' || c == '\r') {
-      if (inputBuffer.length() > 0) {
-        String input = inputBuffer;
-        input.trim();
-        inputBuffer = "";
+//   if (Serial.available()) {
+//     char c = Serial.read();
+//     if (c == '\n' || c == '\r') {
+//       if (inputBuffer.length() > 0) {
+//         String input = inputBuffer;
+//         input.trim();
+//         inputBuffer = "";
         
-        // Check for gimbal commands
-        if (input.charAt(0) == 'P' && input.length() > 1) {
-          float newKp = input.substring(1).toFloat();
-          if (newKp >= 0) {
-            kp = newKp;
-            Serial.print("Kp set to: ");
-            Serial.println(kp, 3);
-          }
-        }
-        else if (input.charAt(0) == 'I' && input.length() > 1) {
-          float newKi = input.substring(1).toFloat();
-          if (newKi >= 0) {
-            ki = newKi;
-            Serial.print("Ki set to: ");
-            Serial.println(ki, 3);
-          }
-        }
-        else if (input.charAt(0) == 'D' && input.length() > 1) {
-          float newKd = input.substring(1).toFloat();
-          if (newKd >= 0) {
-            kd = newKd;
-            Serial.print("Kd set to: ");
-            Serial.println(kd, 3);
-          }
-        }
-        else if (input.equalsIgnoreCase("STATUS")) {
-          Serial.print("Current PID values - P: ");
-          Serial.print(kp, 3);
-          Serial.print(", I: ");
-          Serial.print(ki, 3);
-          Serial.print(", D: ");
-          Serial.print(kd, 3);
-          Serial.print(", Auto-tuning: ");
-          Serial.println(autoTuningEnabled ? "ON" : "OFF");
-        }
-      }
-    } else {
-      inputBuffer += c;
-    }
-  }
-}
+//         // Check for gimbal commands
+//         if (input.charAt(0) == 'P' && input.length() > 1) {
+//           float newKp = input.substring(1).toFloat();
+//           if (newKp >= 0) {
+//             kp = newKp;
+//             // Serial.print("Kp set to: ");
+//             // Serial.println(kp, 3);
+//           }
+//         }
+//         else if (input.charAt(0) == 'I' && input.length() > 1) {
+//           float newKi = input.substring(1).toFloat();
+//           if (newKi >= 0) {
+//             ki = newKi;
+//             // Serial.print("Ki set to: ");
+//             // Serial.println(ki, 3);
+//           }
+//         }
+//         else if (input.charAt(0) == 'D' && input.length() > 1) {
+//           float newKd = input.substring(1).toFloat();
+//           if (newKd >= 0) {
+//             kd = newKd;
+//             // Serial.print("Kd set to: ");
+//             // Serial.println(kd, 3);
+//           }
+//         }
+//         else if (input.equalsIgnoreCase("STATUS")) {
+//           // Serial.print("Current PID values - P: ");
+//           // Serial.print(kp, 3);
+//           // Serial.print(", I: ");
+//           // Serial.print(ki, 3);
+//           // Serial.print(", D: ");
+//           // Serial.print(kd, 3);
+//           // Serial.print(", Auto-tuning: ");
+//           // Serial.println(autoTuningEnabled ? "ON" : "OFF");
+//         }
+//       }
+//     } else {
+//       inputBuffer += c;
+//     }
+//   }
+// }
 
 void performAutoTuning(float error) {
   unsigned long currentTime = millis();
@@ -358,18 +358,18 @@ void performAutoTuning(float error) {
     autoTuningEnabled = false;
     tuningComplete = true;
     
-    Serial.println("Auto-tuning complete!");
-    Serial.print("New PID values - P: ");
-    Serial.print(kp, 3);
-    Serial.print(", I: ");
-    Serial.print(ki, 3);
-    Serial.print(", D: ");
-    Serial.println(kd, 3);
+    // Serial.println("Auto-tuning complete!");
+    // Serial.print("New PID values - P: ");
+    // Serial.print(kp, 3);
+    // Serial.print(", I: ");
+    // Serial.print(ki, 3);
+    // Serial.print(", D: ");
+    // Serial.println(kd, 3);
   }
   
   if (currentTime - autoTuneStartTime > 30000) {
     autoTuningEnabled = false;
-    Serial.println("Auto-tuning timed out.");
+    // Serial.println("Auto-tuning timed out.");
   }
 }
 
@@ -426,28 +426,19 @@ static int32_t IICwriteBytes(uint8_t dev, uint8_t reg, uint8_t* data, uint32_t l
   return 1;
 }
 
-static void ShowHelp(void) {
-  Serial.print("IMU Commands:\r\n");
-  Serial.print("UART SEND:a\\r\\n   Acceleration calibration.\r\n");
-  Serial.print("UART SEND:m\\r\\n   Magnetic field calibration,After calibration send:   e\\r\\n   to indicate the end\r\n");
-  Serial.print("UART SEND:U\\r\\n   Bandwidth increase.\r\n");
-  Serial.print("UART SEND:u\\r\\n   Bandwidth reduction.\r\n");
-  Serial.print("UART SEND:h\\r\\n   help.\r\n");
-}
-
 static void CmdProcess(void) {
   switch(s_cCmd) {
-    case 'a': if(WitStartAccCali() != WIT_HAL_OK) Serial.print("\r\nSet AccCali Error\r\n");
+    case 'a': if(WitStartAccCali() != WIT_HAL_OK) //Serial.print("\r\nSet AccCali Error\r\n");
       break;
-    case 'm': if(WitStartMagCali() != WIT_HAL_OK) Serial.print("\r\nSet MagCali Error\r\n");
+    case 'm': if(WitStartMagCali() != WIT_HAL_OK) //Serial.print("\r\nSet MagCali Error\r\n");
       break;
-    case 'e': if(WitStopMagCali() != WIT_HAL_OK) Serial.print("\r\nSet MagCali Error\r\n");
+    case 'e': if(WitStopMagCali() != WIT_HAL_OK) //Serial.print("\r\nSet MagCali Error\r\n");
       break;
-    case 'u': if(WitSetBandwidth(BANDWIDTH_5HZ) != WIT_HAL_OK) Serial.print("\r\nSet Bandwidth Error\r\n");
+    case 'u': if(WitSetBandwidth(BANDWIDTH_5HZ) != WIT_HAL_OK) //Serial.print("\r\nSet Bandwidth Error\r\n");
       break;
-    case 'U': if(WitSetBandwidth(BANDWIDTH_256HZ) != WIT_HAL_OK) Serial.print("\r\nSet Bandwidth Error\r\n");
+    case 'U': if(WitSetBandwidth(BANDWIDTH_256HZ) != WIT_HAL_OK) //Serial.print("\r\nSet Bandwidth Error\r\n");
       break;
-    case 'h': ShowHelp();
+    case 'h': //ShowHelp();
       break;
     default: return;
   }
@@ -493,14 +484,14 @@ static void AutoScanSensor(void) {
       WitReadReg(AX, 3);
       delay(5);
       if(s_cDataUpdate != 0) {
-        Serial.print("find 0x");
-        Serial.print(i, HEX);
-        Serial.print(" addr sensor\r\n");
+        // Serial.print("find 0x");
+        // Serial.print(i, HEX);
+        // Serial.print(" addr sensor\r\n");
         return;
       }
       iRetry--;
     }while(iRetry);		
   }
-  Serial.print("can not find sensor\r\n");
-  Serial.print("please check your connection\r\n");
+  // Serial.print("can not find sensor\r\n");
+  // Serial.print("please check your connection\r\n");
 }
