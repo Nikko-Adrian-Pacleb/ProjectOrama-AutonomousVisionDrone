@@ -1,12 +1,15 @@
 #include <Wire.h>       // 5% of dynamic memory (113 bytes)
 #include <Servo.h>      // 2% of dynamic memory (37 bytes)
-#include "REG.h"        // so far doesn't use any program or SRAM space
-#include "wit_c_sdk.h"  // so far doesn't use any program or SRAM space
+#include "REG.h"        
+#include "wit_c_sdk.h"  
+#include "VL53L1X.h"
 
 // ###################### DEBUG VARIABLE ########################
 bool DEBUG = false;
 // ##############################################################
 
+// TOF Object initilization
+VL53L1X sensors[4];
 
 Servo gimbalServo;  // use 264 bytes program space and 4 bytes of SRAM
 #define SERVO_PIN 13
@@ -56,6 +59,11 @@ unsigned long lastTime = 0;
 //IMU data for Gimbal
 int16_t rollAngle = 0;      // tenths of degrees
 int16_t smoothedAngle = 0;  // exponential smoothing
+
+//TOF Variables
+int16_t TOFData[] = {0, 0, 0, 0};
+const uint8_t sensorAddresses[4] = {0x30, 0x31, 0x32, 0x33};
+const uint8_t xshutPins[4] = {2, 3, 4, 5}; // Pins connected to XSHUT
 
 
 void setup() {
@@ -108,6 +116,7 @@ void loop() {
 
 }
 
+// --------------- IMU Functions --------------- //
 static void AutoScanSensor(void) {
   int i, iRetry;
   
@@ -129,29 +138,6 @@ static void AutoScanSensor(void) {
   }
   Serial.print("can not find sensor\r\n");
   Serial.print("please check your connection\r\n");
-}
-
-int16_t smoothAngle(int16_t newAngle) {
-   return (int16_t)((3L * newAngle + 7L * smoothedAngle) / 10L);  // alpha = 0.3
-}
-
-
-int16_t pidControl(int16_t target, int16_t current) { // Doesn't use any SRAM or program space currently
-  unsigned long now = millis();
-  uint16_t dtMs = now - lastTime;
-  if (dtMs == 0) dtMs = 1;
-  lastTime = now;
-
-  int16_t error = target - current;
-
-  integral += (int32_t)error * dtMs;                                             // integrate over time
-  int16_t derivative = (int16_t)(((int32_t)(error - prevError) * 1000) / dtMs);  // scale derivative
-
-  int32_t output = (int32_t)gkp * error / 10 + (int32_t)gki * integral / 100000 + (int32_t)gkd * derivative / 100;
-
-  prevError = error;
-
-  return (int16_t)output;
 }
 
 static void CopeSensorData(uint32_t uiReg, uint32_t uiRegNum) { // Doesn't use any SRAM or program space currently
@@ -181,6 +167,75 @@ static int32_t IICwriteBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t l
 static void Delayms(uint16_t ms) {
   delay(ms);
 }
+
+
+// --------------- Camera Control Functions --------------- //
+int16_t smoothAngle(int16_t newAngle) {
+   return (int16_t)((3L * newAngle + 7L * smoothedAngle) / 10L);  // alpha = 0.3
+}
+
+int16_t pidControl(int16_t target, int16_t current) { // Doesn't use any SRAM or program space currently
+  unsigned long now = millis();
+  uint16_t dtMs = now - lastTime;
+  if (dtMs == 0) dtMs = 1;
+  lastTime = now;
+
+  int16_t error = target - current;
+
+  integral += (int32_t)error * dtMs;                                             // integrate over time
+  int16_t derivative = (int16_t)(((int32_t)(error - prevError) * 1000) / dtMs);  // scale derivative
+
+  int32_t output = (int32_t)gkp * error / 10 + (int32_t)gki * integral / 100000 + (int32_t)gkd * derivative / 100;
+
+  prevError = error;
+
+  return (int16_t)output;
+}
+
+// --------------- TOF sensor Functions --------------- //
+void sensor_init(VL53L1X::DistanceMode range_mode, bool high_speed, VL53L1X sensor) {
+  Wire.begin();
+
+  // Disable all sensors first
+  for (int i = 0; i < 4; i++) {
+    pinMode(xshutPins[i], OUTPUT);
+    digitalWrite(xshutPins[i], LOW); // Pull XSHUT low to disable sensor
+  }
+  delay(10);
+
+  // Initialize sensors one at a time
+  for (int i = 0; i < 4; i++) {
+    digitalWrite(xshutPins[i], HIGH); // Enable one sensor
+    delay(10); // Allow time to boot
+
+    sensors[i].setTimeout(500);
+    if (!sensors[i].init()) {
+      Serial.print("Failed to detect sensor ");
+      Serial.println(i);
+      while (1);
+    }
+
+    sensors[i].setAddress(sensorAddresses[i]);
+  }
+
+  // Start ranging on all sensors
+  for (int i = 0; i < 4; i++) {
+    sensors[i].startContinuous(50); // 50ms interval
+  }
+}
+
+uint16_t* getAllTOFSensorData() {
+  for (int i = 1; i <= 4; i++) {
+    TOFData[i] = sensors[i].read();
+  }
+  return TOFData;
+}
+
+
+
+
+
+
 
 
 
