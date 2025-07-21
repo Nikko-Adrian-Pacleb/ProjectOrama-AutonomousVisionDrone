@@ -1,6 +1,7 @@
 #include "VL53L1X.h"
 
-VL53L1X sensor;
+VL53L1X tof1;
+VL53L1X tof2;
 
 void sensor_init(VL53L1X::DistanceMode range_mode, bool high_speed) {
   Wire.begin();

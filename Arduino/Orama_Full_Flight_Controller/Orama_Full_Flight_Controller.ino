@@ -9,7 +9,7 @@
 #include <SoftwareSerial.h>   //header file of software serial port
 #include "REG.h"        
 #include "wit_c_sdk.h"  
-#include "VL53L1X.h"
+#include <VL53L1X.h>
 
 
 // ###################### DEBUG VARIABLE ########################
@@ -143,9 +143,6 @@ void loop() {
     gimbalServo.write(servoAngle / 10);
     s_cDataUpdate = 0;
   }
-
-  if 
-
 }
 
 
