@@ -26,7 +26,7 @@ class Drone {
     int throttle;
 
     // ----- Hardware -----
-    Servo frontLeft, frontRight, backLeft, backRight;
+    Servo frontLeftMotor, frontRightMotor, backLeftMotor, backRightMotor;
   	VL53L1X tofSensor;
     // 1 Lidar
     // Controller
