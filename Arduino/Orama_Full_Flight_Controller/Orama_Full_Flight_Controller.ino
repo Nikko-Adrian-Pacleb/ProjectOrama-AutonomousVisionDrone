@@ -4,8 +4,8 @@
 
 // dynamic memory is looking okay. I think we should be fine.
 
-#include <Wire.h>       // 5% of dynamic memory (113 bytes)
-#include <Servo.h>      // 2% of dynamic memory (37 bytes)
+#include <Wire.h>
+#include <Servo.h>
 #include <SoftwareSerial.h>   //header file of software serial port
 #include "REG.h"        
 #include "wit_c_sdk.h"  
@@ -28,7 +28,7 @@ int check;                    //save check value
 int uart[9];                   //save data measured by LiDAR
 const int HEADER = 0x59;      //frame header of data package
 
-Servo gimbalServo;  // use 264 bytes program space and 4 bytes of SRAM
+Servo gimbalServo;
 #define SERVO_PIN 13
 
 // IMU data update flags
@@ -97,20 +97,20 @@ const uint8_t sensorAddresses[4] = {0x30, 0x31, 0x32, 0x33}; // these will be fo
 
 
 void setup() {
-  Wire.begin();           // uses 174 bytes of program space along with 69 bytes of SRAM
-  Wire.setClock(400000);  // uses 6 bytes of program space
-  Serial.begin(115200);   // uses 970 bytes of program space along with 175 bytes of SRAM
+  Wire.begin();
+  Wire.setClock(400000);
+  Serial.begin(115200);
 
-  gimbalServo.attach(SERVO_PIN, 500, 2400);  // uses 254 bytes of program space along with 0 bytes of SRAM
-  gimbalServo.write(90);              // sets camera at level // uses 356 bytes of program space along with 0 bytes of SRAM
+  gimbalServo.attach(SERVO_PIN, 500, 2400);
+  gimbalServo.write(90);              // sets camera at level
 
   WitInit(WIT_PROTOCOL_I2C, 0x68); // uses 0 of both
-  WitI2cFuncRegister(IICwriteBytes, IICreadBytes); // uses 1434 bytes of program space along with 34 bytes of SRAM
-  WitRegisterCallBack(CopeSensorData); // uses 22 bytes of program space along with 1 bytes of SRAM
-  WitDelayMsRegister(Delayms); // uses 104 bytes of program space along with 0 bytes of SRAM
+  WitI2cFuncRegister(IICwriteBytes, IICreadBytes);
+  WitRegisterCallBack(CopeSensorData);
+  WitDelayMsRegister(Delayms);
 
-  //delay(100); // uses 20 bytes of program space along with 0 bytes of SRAM
-  //WitReadReg(AX, 12); // uses 106 bytes of program space along with 266 bytes of SRAM
+  //delay(100);
+  //WitReadReg(AX, 12);
   delay(1000);
   WitReadReg(AX, 12);
   delay(100);
@@ -126,13 +126,13 @@ void loop() {
 
   // Sensor read timing using delta time not delays
   if (now - lastSensorRead >= sensorInterval) {
-    lastSensorRead = now; // uses 4 bytes of SRAM
-    WitReadReg(AX, 12); // only uses program space because it has been called before.
+    lastSensorRead = now;
+    WitReadReg(AX, 12);
   }
 
   // only checks the sensor when the delta time is correct. Allows for the program to keep running. This is for the camera gimbal.
   if (s_cDataUpdate) {
-    rollAngle = (int16_t)((sReg[Roll] * 1800L) / 32768L); // tenths of degrees --------------------- uses 288 bytes of SRAM ----------------------------------------
+    rollAngle = (int16_t)((sReg[Roll] * 1800L) / 32768L); // tenths of degrees
     smoothedAngle = smoothAngle(rollAngle);
     int16_t correction = pidControl(0, smoothedAngle);
     int16_t servoAngle = 900 - correction;
