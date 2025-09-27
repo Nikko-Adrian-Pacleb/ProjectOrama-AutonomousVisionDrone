@@ -66,7 +66,6 @@ struct controlData {
   int throttle; // a potentiometer value like 0 - 1684 or whatever that value is.
   int switchMode; // use as a boolean so either 0 or 1
   // have to think about what else to put in the struct.
-
 };
 
 // variables used to replace all delay functions and just use deltaTime
@@ -147,6 +146,11 @@ void loop() {
 
 
 // --------------- IMU Functions --------------- //
+// These functions don't need to be changed they allow us to communicate with the IMU. Without them communicating with them is really hard.
+
+/** This function scans all available Hex numbers to find a channel that the IMU is currently on.
+  * doesn't take in any parameters
+*/
 static void AutoScanSensor(void) {
   int i, iRetry;
   
@@ -174,6 +178,14 @@ static void CopeSensorData(uint32_t uiReg, uint32_t uiRegNum) {
   if (uiReg == Yaw) s_cDataUpdate |= ANGLE_UPDATE;
 }
 
+/** This function reads the bytes that come across the IIC channels.
+  * This is how we communicate with the IMU
+  * @param dev Channel that we communicate to the IMU on
+  * @param reg First register that allows communication
+  * @param data A pointer towards the data that we take from the IMu and adds it to the array
+  * @param length Specifies the length of the data that we are reading
+  * @return Returns 0 if there is nothing to be read. Returns 1 if data has been added to the data array.
+  */ 
 static int32_t IICreadBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t length) {
   Wire.beginTransmission(dev);
   Wire.write(reg);
@@ -187,6 +199,13 @@ static int32_t IICreadBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t le
   return 1;
 }
 
+/** This function writes bytes to the communication channel between the IMU and microcontroller
+  * @param dev Channel that we communicate to the IMU on
+  * @param reg First register that allows communication
+  * @param data A pointer towards the data that we take from the IMu and adds it to the array
+  * @param length Specifies the length of the data that we are reading
+  * @return returns true or false based on if the transmission went through or not. 
+  */
 static int32_t IICwriteBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t length) { 
   Wire.beginTransmission(dev);
   Wire.write(reg);
@@ -198,12 +217,15 @@ static void Delayms(uint16_t ms) {
   delay(ms);
 }
 
-
 // --------------- Camera Control Functions --------------- //
 int16_t smoothAngle(int16_t newAngle) {
    return (int16_t)((3L * newAngle + 7L * smoothedAngle) / 10L);  // alpha = 0.3
 }
 
+/** This function runs the PID through a custom made PID. 
+  * @param target is the number that we want the pid value to reach
+  * @param current is the number that the value is currently.
+  */
 int16_t pidControl(int16_t target, int16_t current) {
   unsigned long now = millis();
   uint16_t dtMs = now - lastTime;
@@ -245,6 +267,11 @@ int16_t motorPIDControl(int16_t target, int16_t current) { // need to adapt it t
 
 
 // --------------- TOF Sensor Functions --------------- //
+/** @brief This function starts up each TOF sensor using the multiplexer
+  * @param range_mode chooses the precision and range of the sensor
+  * @param high_speed Chooses true or false on whether you want to use high speed mode
+  * @param sensor This is the sensor object that will contain the info for each sensor.
+  */
 void sensor_init(VL53L1X::DistanceMode range_mode, bool high_speed, VL53L1X sensor) {
   Wire.begin();
   // Start ranging on all sensors
