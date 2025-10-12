@@ -43,7 +43,7 @@ void setup() {
   Serial.println(F("\n== Drone Object + WitMotion IMU =="));
 
   // Drone object functions to start
-  quad.begin(PIN_FL, PIN_FR, PIN_BL, PIN_BR, &Serial);
+  quad.begin(MOTOR_FL, MOTOR_FR, MOTOR_BL, MOTOR_BR, &Serial);
   quad.setDebug(true);
 
   // Start disarmed

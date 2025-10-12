@@ -3,69 +3,94 @@
 
 #include <Arduino.h>
 #include <Servo.h>
-#include <VL53L1X.h>
 
+// --- Basic quad state (extend later if you want) ---
 enum DroneState {
-  HOVER, // Stay in place
-  LIFT, // Go up
-  DESCENT, // Go down
-  PITCH_FORWARD, // Move forward
-  PITCH_BACKWARD, // Move Backward
-  ROLL_LEFT, // Go left still facing front
-  ROLL_RIGHT, // Go right still facing front
-  YAW_LEFT, // Face left
-  YAW_RIGHT // Face right
+  DISARMED = 0,
+  ARMED
+};
+
+// --- Tiny PID helper (no dynamic alloc, dt in seconds) ---
+struct PID {
+  float kp = 0.0f, ki = 0.0f, kd = 0.0f;
+  float iTerm = 0.0f;
+  float prevErr = 0.0f;
+
+  void setGains(float _kp, float _ki, float _kd) {
+    kp = _kp; ki = _ki; kd = _kd;
+  }
+
+  void reset() {
+    iTerm = 0.0f;
+    prevErr = 0.0f;
+  }
+
+  // returns control effort
+  float update(float setpoint, float measured, float dt, float iLimit = 200.0f) {
+    float err = setpoint - measured;
+    iTerm += err * dt * ki;
+    // anti-windup clamp
+    if (iTerm > iLimit) iTerm = iLimit;
+    if (iTerm < -iLimit) iTerm = -iLimit;
+    float d = (dt > 0.0f) ? (err - prevErr) / dt : 0.0f;
+    prevErr = err;
+    return kp * err + iTerm + kd * d;
+  }
 };
 
 class Drone {
-  private:
-    // ----- Software -----
-    DroneState dronteState;
-    float pitch, roll, yaw;
-    uint8_t multiplexerAddress;
-    int throttle;
+public:
+  Drone();
 
-    // ----- Hardware -----
-    Servo frontLeftMotor, frontRightMotor, backLeftMotor, backRightMotor;
-  	VL53L1X tofSensor;
-    // 1 Lidar
-    // Controller
-    // RaspberryPi
-    // If we have enough pins. Emergency Switch
-    // If we have enough pins. Light indicator
+  // Attach motor pins (write in microseconds to ESCs)
+  void begin(uint8_t pinFL, uint8_t pinFR, uint8_t pinBL, uint8_t pinBR, HardwareSerial* dbg = &Serial);
 
-  public:
-    Drone();
+  // Arming / disarming
+  void arm();
+  void disarm();
+  bool isArmed() const { return state == ARMED; }
 
-    void update();
+  // PID gain setters
+  void setPitchPID(float kp, float ki, float kd);
+  void setRollPID (float kp, float ki, float kd);
+  void setYawPID  (float kp, float ki, float kd);
 
-    void arm();
-    void disarm();
-    bool isArmed();
+  // Optional: set desired attitudes (deg) and yaw rate (deg/s) if you add sticks later
+  void setSetpoints(float pitchDeg, float rollDeg, float yawRateDegS);
 
-    void emergencyStop();
+  // Base throttle in µs (1000–2000)
+  void setBaseThrottle(int throttleUs);
 
-    void setOrientationValues(float pitchAngle, float rollAngle, float yawAngle);
-    float getPitch();
-    float getRoll();
-    float getYaw();
+  // Update stabilization + motor mix.
+  // Provide measured pitch/roll in degrees, yaw rate in deg/s, and dt in seconds.
+  void update(float pitchDeg, float rollDeg, float yawRateDegS, float dt);
 
-    void setDroneState(DroneState droneState);
-    DroneState getDroneState();
+  // Debug
+  void setDebug(bool enabled);
 
-    // ----- MOTORS -----
-  	void initializeMotors(int FrontLeftPin, int FrontRightPin, int BackLeftPin, int BackRightPin);
-    void setThrottle(int throttleValue);
-    int getCurrentThrottle();
-  
-  	// ----- Multiplexer -----
-  	void setI2CAddress(uint8_t address);
-  	void selectI2CPort(uint8_t portNumber);
-  
-  	// ----- TOF -----
-  	bool initializeTOFSensor(uint8_t portNumber);
-  	bool isDistanceSafe(DroneState droneState);
-  	int getTOFDistance(uint8_t portNumber);
+private:
+  // ESC outputs
+  Servo mFL, mFR, mBL, mBR;
+  uint8_t pinFL=255, pinFR=255, pinBL=255, pinBR=255;
+
+  // State
+  DroneState state = DISARMED;
+  int baseThrottleUs = 1000; // µs
+  bool debugEnabled = true;
+  HardwareSerial* debugPort = &Serial;
+
+  // Setpoints
+  float spPitch = 0.0f;   // deg
+  float spRoll  = 0.0f;   // deg
+  float spYawRate = 0.0f; // deg/s
+
+  // Controllers
+  PID pidPitch, pidRoll, pidYaw;
+
+  // Helpers
+  static int clampUs(int x);
+  void writeAll(int usFL, int usFR, int usBL, int usBR);
+  void stopAll();
 };
 
 #endif

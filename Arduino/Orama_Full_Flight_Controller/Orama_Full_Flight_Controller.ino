@@ -1,221 +1,182 @@
-//TODO: need to write a function for the motor PID control.
-//      Need to implement the LiDAR sensor into the code for automatic landing sequence. // STARTED
-//      Need to implement the code for object avoidance using the TOF sensors.
+// Used for minimal PID test
+// Takes in throttle input from a single channel from controller
+// mixes throttle input to 4 ESC's on pins 2,3,4,5
+// Serial is set up 115200
 
-// dynamic memory is looking okay. I think we should be fine.
-
+// ====================== LIBRARIES =======================
+#include "Drone.h"
 #include <Wire.h>
 #include <Servo.h>
-#include <SoftwareSerial.h>   //header file of software serial port
-#include "REG.h"        
-#include "wit_c_sdk.h"  
-#include <VL53L1X.h>
+#include "REG.h"
+#include "wit_c_sdk.h"
 
+// ======================== PINS ==========================
+#define MOTOR_FL 2
+#define MOTOR_FR 3
+#define MOTOR_BL 4
+#define MOTOR_BR 5
 
-// ###################### DEBUG VARIABLE ########################
-bool DEBUG = false;
-// ##############################################################
+#define RC_THROTTLE_PIN 9
 
-// TOF Object initilization
-VL53L1X sensors[4];
+// ==================== DRONE OBJECT ======================
+Drone quad;
 
-// LiDAR variables and softwareserial object
-SoftwareSerial Serial1(2, 3); //define software serial port name as Serial1 and define pin2 as RX & pin3 as TX
- 
-int dist;                     //actual distance measurements of LiDAR
-int strength;                 //signal strength of LiDAR
-int check;                    //save check value
-int uart[9];                   //save data measured by LiDAR
-const int HEADER = 0x59;      //frame header of data package
-
-Servo gimbalServo;
-#define SERVO_PIN 13
-
-// IMU data update flags
-#define ACC_UPDATE 0x01
-#define GYRO_UPDATE 0x02
+// =============== IMU STATE & VARIABLES ==================
+#define ACC_UPDATE   0x01
+#define GYRO_UPDATE  0x02
 #define ANGLE_UPDATE 0x04
-#define MAG_UPDATE 0x08
-#define READ_UPDATE 0x80
-static char s_cDataUpdate = 0, s_cCmd = 0xff;
+#define READ_UPDATE  0x80
 
-// pins for the motors and analog switch between manual and autonomous
-#define FRONT_LEFT_MOTOR 2
-#define FRONT_RIGHT_MOTOR 3
-#define BACK_LEFT_MOTOR 4
-#define BACK_RIGHT_MOTOR 5
-#define MANUAL_SWITCH 6
+static volatile uint8_t s_cDataUpdate = 0;
+static uint8_t s_cCmd = 0xff;
 
-// control the ESC using servo objects and write microseconds to them.
-Servo FrontLeftProp;
-Servo FrontRightProp;
-Servo BackLeftProp;
-Servo BackRightProp;
+static float pitchDeg = 0.0f; // +nose up
+static float rollDeg  = 0.0f; // +right wing down
+static float yawRate  = 0.0f; // °/s (use gyro Z)
 
-// Pins for the reciever
-#define CH1 7
-#define CH2 8
-#define CH3 9
-#define CH4 10
-#define CH5 11
-#define CH6 12
+float fAcc[3]   = {0,0,0};  // g
+float fGyro[3]  = {0,0,0};  // °/s
+float fAngle[3] = {0,0,0};  // roll, pitch, yaw in °
 
+// ====================== RC ARMING =======================
+uint32_t haveSignalMs = 0, lostSignalMs = 0;
 
-// data that will get recieved from the RPi and is used to control the drone based on what the computer vision sees.
-struct controlData {
-  int throttle; // a potentiometer value like 0 - 1684 or whatever that value is.
-  int switchMode; // use as a boolean so either 0 or 1
-  // have to think about what else to put in the struct.
-};
+// ======================= HELPERS ========================
+static inline float microsToSec(uint32_t us){ return us * 1e-6f; }
+static inline float angleFromRaw(int16_t raw){ return raw * 180.0f  / 32768.0f; }
+static inline float gyroFromRaw (int16_t raw){ return raw * 2000.0f / 32768.0f; }
+static inline float accFromRaw  (int16_t raw){ return raw * 16.0f   / 32768.0f; }
 
-// variables used to replace all delay functions and just use deltaTime
-unsigned long lastSensorRead = 0;
-const unsigned long sensorInterval = 20; // ms
+// ================ Pre-Defined Functions==================
+static void CmdProcess(void);
+static void AutoScanSensor(void);
+static void SensorUartSend(uint8_t *p_data, uint32_t uiSize);
+static void CopeSensorData(uint32_t uiReg, uint32_t uiRegNum);
+static int32_t IICreadBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t length);
+static int32_t IICwriteBytes(uint8_t dev, uint8_t reg, uint8_t* data, uint32_t length);
+static void Delayms(uint16_t ucMs);
 
-// Gimbal PID Controller parameters
-int16_t gkp = 2.2;    // Proportional gain
-int16_t gki = 0.105;  // Integral gain
-int16_t gkd = 0.04;   // Derivative gain
-
-// Motor PID Controller parameters
-int16_t mkp = 2.2;    // Proportional gain
-int16_t mki = 0.105;  // Integral gain
-int16_t mkd = 0.04;   // Derivative gain
-
-int32_t integral = 0;
-int16_t prevError = 0;
-unsigned long lastTime = 0;
-
-//IMU data for Gimbal
-int16_t rollAngle = 0;      // tenths of degrees
-int16_t smoothedAngle = 0;  // exponential smoothing
-
-//TOF Variables
-int16_t TOFData[] = {0, 0, 0, 0}; // not sure how nikko wanted to put this into a struct. It would be very similar.
-const uint8_t sensorAddresses[4] = {0x30, 0x31, 0x32, 0x33}; // these will be found after hooking up the I2C multiplexer.
-
-
+// ======================== SETUP =========================
 void setup() {
   Wire.begin();
-  Wire.setClock(400000);
+  Wire.setClock(100000);               // standard I2C, safer for many JY/Wit modules
+#if defined(TWBR) || ARDUINO >= 10607
+  Wire.setTimeout(5000);
+#endif
   Serial.begin(115200);
 
-  gimbalServo.attach(SERVO_PIN, 500, 2400);
-  gimbalServo.write(90);              // sets camera at level
+  quad.begin(MOTOR_FL, MOTOR_FR, MOTOR_BL, MOTOR_BR, &Serial);
+  quad.setDebug(true);
+  quad.disarm();
 
-  WitInit(WIT_PROTOCOL_I2C, 0x68); // uses 0 of both
+  pinMode(RC_THROTTLE_PIN, INPUT);
+
+  // Register I2C functions and callbacks BEFORE init/scan
   WitI2cFuncRegister(IICwriteBytes, IICreadBytes);
   WitRegisterCallBack(CopeSensorData);
   WitDelayMsRegister(Delayms);
 
-  //delay(100);
-  //WitReadReg(AX, 12);
-  delay(1000);
-  WitReadReg(AX, 12);
-  delay(100);
-  if(s_cDataUpdate == 0) {
-    Serial.println("Sensor not found at 0x34, trying auto-scan...");
-    AutoScanSensor();
-  }
+  AutoScanSensor();
 }
 
+// ======================== LOOP ==========================
 void loop() {
-  
-  unsigned long now = millis();
+  static uint32_t lastMicros = micros();
+  uint32_t now = micros();
+  float dt = microsToSec(now - lastMicros);
+  lastMicros = now;
+  if (dt <= 0.0f || dt > 0.1f) dt = 0.005f; // cap dt
 
-  // Sensor read timing using delta time not delays
-  if (now - lastSensorRead >= sensorInterval) {
-    lastSensorRead = now;
-    WitReadReg(AX, 12);
+  // ----- IMU Poll (non-blocking) -----
+  static uint32_t lastImu = 0;
+  if (millis() - lastImu >= 5) {             // ~200 Hz
+    lastImu = millis();
+    // Read Acc + Gyro (AX..AZ, GX..GZ) then Angles (Roll..Yaw)
+    WitReadReg(AX,   6);  // 3 regs (X,Y,Z) = 6 bytes each group handled by SDK
+    WitReadReg(GX,   6);
+    WitReadReg(Roll, 3);  // roll, pitch, yaw
   }
 
-  // only checks the sensor when the delta time is correct. Allows for the program to keep running. This is for the camera gimbal.
-  if (s_cDataUpdate) {
-    rollAngle = (int16_t)((sReg[Roll] * 1800L) / 32768L); // tenths of degrees
-    smoothedAngle = smoothAngle(rollAngle);
-    int16_t correction = pidControl(0, smoothedAngle);
-    int16_t servoAngle = 900 - correction;
+  // If any new data landed, convert using your scale factors
+  if (s_cDataUpdate & (ACC_UPDATE | GYRO_UPDATE | ANGLE_UPDATE)) {
+    // Convert Acc
+    if (s_cDataUpdate & ACC_UPDATE) {
+      fAcc[0] = accFromRaw((int16_t)sReg[AX+0]);
+      fAcc[1] = accFromRaw((int16_t)sReg[AX+1]);
+      fAcc[2] = accFromRaw((int16_t)sReg[AX+2]);
+    }
+    // Convert Gyro
+    if (s_cDataUpdate & GYRO_UPDATE) {
+      fGyro[0] = gyroFromRaw((int16_t)sReg[GX+0]);
+      fGyro[1] = gyroFromRaw((int16_t)sReg[GX+1]);
+      fGyro[2] = gyroFromRaw((int16_t)sReg[GX+2]);
+    }
+    // Convert Euler angles
+    if (s_cDataUpdate & ANGLE_UPDATE) {
+      fAngle[0] = -angleFromRaw((int16_t)sReg[Roll+0]);  // roll
+      fAngle[1] = angleFromRaw((int16_t)sReg[Roll+1]);  // pitch
+      fAngle[2] = angleFromRaw((int16_t)sReg[Roll+2]);  // yaw
+    }
 
-    if (servoAngle < 450) servoAngle = 450;
-    if (servoAngle > 1800) servoAngle = 1800;
+    // Drive the control signals you actually use
+    rollDeg  = fAngle[0];
+    pitchDeg = fAngle[1];
+    yawRate  = fAngle[2];   // use gyro Z as yaw rate
 
-    gimbalServo.write(servoAngle / 10);
-    s_cDataUpdate = 0;
+    // clear the bits we just consumed
+    s_cDataUpdate &= ~(ACC_UPDATE | GYRO_UPDATE | ANGLE_UPDATE);
   }
-}
 
+  // --- Read RC throttle pulse (blocking but simple) ---
+  unsigned long pulse = pulseIn(RC_THROTTLE_PIN, HIGH, 25000UL); // timeout 25ms
+  bool hasSignal = (pulse >= 900 && pulse <= 2100);
+  uint32_t tNow = millis();
 
-// --------------- IMU Functions --------------- //
-// These functions don't need to be changed they allow us to communicate with the IMU. Without them communicating with them is really hard.
-
-/** This function scans all available Hex numbers to find a channel that the IMU is currently on.
-  * doesn't take in any parameters
-*/
-static void AutoScanSensor(void) {
-  int i, iRetry;
-  
-  for(i = 0; i < 0x7F; i++) {
-    WitInit(WIT_PROTOCOL_I2C, i);
-    iRetry = 2;
-    do {
-      s_cDataUpdate = 0;
-      WitReadReg(AX, 3);
-      delay(5);
-      if(s_cDataUpdate != 0) {
-        Serial.print("find 0x");
-        Serial.print(i, HEX);
-        Serial.print(" addr sensor\r\n");
-        return;
-      }
-      iRetry--;
-    }while(iRetry);		
+  if (hasSignal) {
+    haveSignalMs += (uint16_t)(dt * 1000.0f);
+    lostSignalMs = 0;
+  } else {
+    lostSignalMs += (uint16_t)(dt * 1000.0f);
+    haveSignalMs = 0;
   }
-  Serial.print("can not find sensor\r\n");
-  Serial.print("please check your connection\r\n");
-}
 
-static void CopeSensorData(uint32_t uiReg, uint32_t uiRegNum) { 
-  if (uiReg == Yaw) s_cDataUpdate |= ANGLE_UPDATE;
-}
-
-/** This function reads the bytes that come across the IIC channels.
-  * This is how we communicate with the IMU
-  * @param dev Channel that we communicate to the IMU on
-  * @param reg First register that allows communication
-  * @param data A pointer towards the data that we take from the IMu and adds it to the array
-  * @param length Specifies the length of the data that we are reading
-  * @return Returns 0 if there is nothing to be read. Returns 1 if data has been added to the data array.
-  */ 
-static int32_t IICreadBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t length) {
-  Wire.beginTransmission(dev);
-  Wire.write(reg);
-  if (Wire.endTransmission(false) != 0) return 0;
-  Wire.requestFrom(dev, length);
-  unsigned long start = millis();
-  while (Wire.available() < length) {
-    if (millis() - start > 100) return 0;
+  // --- Arming/disarming conditions ---
+  if (!quad.isArmed() && hasSignal && haveSignalMs > 1000) {
+    quad.arm();
   }
-  for (uint32_t i = 0; i < length; i++) data[i] = Wire.read();
-  return 1;
+  if (quad.isArmed() && (!hasSignal || lostSignalMs > 500)) {
+    quad.disarm();
+  }
+quad.arm();
+  // Map throttle pulse to ESC µs
+  int throttleUs = 1000;
+  if (hasSignal) {
+    if      (pulse < 1050) throttleUs = 1000;  // deadband
+    else if (pulse > 1500) throttleUs = 1500;  // cap while tuning
+    else                   throttleUs = (int)pulse;
+  }
+  quad.setBaseThrottle(throttleUs);
+
+  // Level setpoints and zero yaw-rate
+  quad.setSetpoints(0.0f, 0.0f, 0.0f);
+
+  // Update mixer and PID with latest IMU values
+  quad.update(pitchDeg, rollDeg, yawRate, dt);
+
+  // Optional: heartbeat
+  // static uint32_t lastBeat = 0;
+  // if (millis() - lastBeat > 500) {
+  //   lastBeat = millis();
+  //   Serial.print(F("[beat] RC=")); Serial.print(hasSignal ? (int)pulse : -1);
+  //   Serial.print(F("  THR=")); Serial.print(throttleUs);
+  //   Serial.print(F("  ARM=")); Serial.println(quad.isArmed() ? 1 : 0);
+  //   Serial.print(F(" IMU P,R,Yr="));
+  //   Serial.print(pitchDeg,1); Serial.print(',');
+  //   Serial.print(rollDeg,1);  Serial.print(',');
+  //   Serial.println(yawRate,1);
+  // }
 }
 
-/** This function writes bytes to the communication channel between the IMU and microcontroller
-  * @param dev Channel that we communicate to the IMU on
-  * @param reg First register that allows communication
-  * @param data A pointer towards the data that we take from the IMu and adds it to the array
-  * @param length Specifies the length of the data that we are reading
-  * @return returns true or false based on if the transmission went through or not. 
-  */
-static int32_t IICwriteBytes(uint8_t dev, uint8_t reg, uint8_t *data, uint32_t length) { 
-  Wire.beginTransmission(dev);
-  Wire.write(reg);
-  Wire.write(data, length);
-  return Wire.endTransmission() == 0;
-}
-
-static void Delayms(uint16_t ms) {
-  delay(ms);
-}
 
 // --------------- Camera Control Functions --------------- //
 int16_t smoothAngle(int16_t newAngle) {
@@ -243,28 +204,6 @@ int16_t pidControl(int16_t target, int16_t current) {
 
   return (int16_t)output;
 }
-// --------------- Motor Control Functions --------------- //
-
-
-/** Starts all 4 ESC's so that you can actually control them.
- * void function
-*/
-void motor_init() {
-  FrontLeftProp.attach(FRONT_LEFT_MOTOR);
-  FrontRightProp.attach(FRONT_RIGHT_MOTOR);
-  BackLeftProp.attach(BACK_LEFT_MOTOR);
-  BackRightProp.attach(BACK_RIGHT_MOTOR);
-
-  FrontLeftProp.writeMicroseconds(1000);
-  FrontRightProp.writeMicroseconds(1000);
-  BackLeftProp.writeMicroseconds(1000);
-  BackRightProp.writeMicroseconds(1000);
-}
-
-int16_t motorPIDControl(int16_t target, int16_t current) { // need to adapt it to 3 axis and 4 motors instead of just 1 axis and 1 motor.
-  
-}
-
 
 // --------------- TOF Sensor Functions --------------- //
 /** @brief This function starts up each TOF sensor using the multiplexer
@@ -288,8 +227,6 @@ uint16_t* getAllTOFSensorData() {
 }
 
 // --------------- LiDAR Sensor Functions --------------- //
-
-
 /** Starts and connects the LiDAR through UART.
  * @return int available - number that is either 0 or 1 to tell if the serial is off or running.
 */
@@ -324,44 +261,49 @@ int getLiDARData() {
     }
   }
   return dist;
+
+// ================= WITMOTION FUNCTIONS ==================
+static void AutoScanSensor(void) {
+  for (int i = 0; i < 0x7F; i++) {
+    WitInit(WIT_PROTOCOL_I2C, i);
+    int retry = 2;
+    do {
+      s_cDataUpdate = 0;
+      WitReadReg(AX, 3);     // try reading some accel
+      Delayms(5);
+      if (s_cDataUpdate & ACC_UPDATE) {
+        Serial.print(F("Found IMU @ 0x")); Serial.println(i, HEX);
+        return;
+      }
+    } while (retry--);
+  }
+  Serial.println(F("IMU not found"));
 }
 
-
-
-/** Automatically lands the drone using the LiDAR sensor. 
-  * @return void
-*/
-void autoLand() {
-
- /* 1. need to first check the distance that the drone is currently from the ground.
-    2. If the distance is really large start descending at fastest speed allowed.
-    3. If not then use the percentage to find the descending speed.
-    4. then write the correct speed to the motors and constantly adjusting till the distance stops changing.
-    5. once the distance stops changing stop the motors.
-
-    //coudln't do any reasearch or testing on this so someone will have to test and see if it works.
-  */
-
-  //almost positive the way that this works is not correct. but I hope you get the idea.
-  
-  int groundDist = getLiDARData();
-  int lastDist = 0;
-  if (groundDist > 3000) {
-    //need to write to the motors through the PID to make sure that it lands flat.
-    //not quite sure what value will start to lower the drone. This has to be found once we have the total weight and have tried flying it on a string or something once the PID works.
-    int lastDist = getLiDARData();
-  }
-  while (groundDist > 20) { // need to write it so that it uses a last distance to make sure that the drone is still descending.
-
-  }
-  
-
+static void CopeSensorData(uint32_t uiReg, uint32_t uiRegNum) {
+  // Set flags based on which block the SDK says was updated
+  // (REG.h provides AX,GX,Roll… enumerations, contiguous for XYZ)
+  if (uiReg == AX)   s_cDataUpdate |= ACC_UPDATE;
+  if (uiReg == GX)   s_cDataUpdate |= GYRO_UPDATE;
+  if (uiReg == Roll) s_cDataUpdate |= ANGLE_UPDATE;
 }
 
+static int32_t IICreadBytes(uint8_t dev,uint8_t reg,uint8_t *data,uint32_t length){
+  Wire.beginTransmission(dev);
+  Wire.write(reg);
+  if(Wire.endTransmission(false)!=0) return 0;
+  Wire.requestFrom(dev,(uint8_t)length);
+  unsigned long start=millis();
+  while(Wire.available()<(int)length){ if(millis()-start>100) return 0; }
+  for(uint32_t i=0;i<length;i++) data[i]=Wire.read();
+  return 1;
+}
 
+static int32_t IICwriteBytes(uint8_t dev,uint8_t reg,uint8_t *data,uint32_t length){
+  Wire.beginTransmission(dev);
+  Wire.write(reg);
+  Wire.write(data,length);
+  return Wire.endTransmission()==0;
+}
 
-
-
-
-
-
+static void Delayms(uint16_t ms){ delay(ms); }
